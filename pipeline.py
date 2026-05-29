@@ -11,6 +11,7 @@ def build_multimodal_model(
     structured_data=None,
     classification_targets=None,
     regression_targets=None,
+    include_text_labels=True,
     split_ratio=0.8,
     max_trials=3,
     seed=42,
@@ -22,7 +23,7 @@ def build_multimodal_model(
     text_data : dict or None
         {
             "doc": [...],
-            "label": [...]
+            "label": [...]  # optional classification target
         }
 
     image_data : np.ndarray or None
@@ -30,21 +31,14 @@ def build_multimodal_model(
     structured_data : np.ndarray or None
 
     classification_targets : list or None
-        List of classification target arrays.
-
-        Example:
-        [
-            label,
-            classification_target
-        ]
+        Additional classification targets.
 
     regression_targets : list or None
-        List of regression target arrays.
+        Regression targets.
 
-        Example:
-        [
-            regression_target
-        ]
+    include_text_labels : bool
+        If True and text_data contains "label",
+        a ClassificationHead will be created automatically.
     """
 
     # --------------------------------------------------
@@ -74,6 +68,9 @@ def build_multimodal_model(
     train_inputs = []
     test_inputs = []
 
+    text_label_train = None
+    text_label_test = None
+
     # --------------------------------------------------
     # TEXT
     # --------------------------------------------------
@@ -93,6 +90,14 @@ def build_multimodal_model(
 
         train_inputs.append(doc_train)
         test_inputs.append(doc_test)
+
+        # Optional text labels
+        if include_text_labels and "label" in text_data:
+
+            labels = np.array(text_data["label"])
+
+            text_label_train = labels[:split_idx]
+            text_label_test = labels[split_idx:]
 
     # --------------------------------------------------
     # IMAGE
@@ -152,11 +157,28 @@ def build_multimodal_model(
     train_targets = []
     test_targets = []
 
-    # Classification outputs
+    # --------------------------------------------------
+    # TEXT LABEL HEAD
+    # --------------------------------------------------
+
+    if text_label_train is not None:
+
+        train_targets.append(text_label_train)
+        test_targets.append(text_label_test)
+
+        outputs.append(
+            ak.ClassificationHead(
+                name="text_label"
+            )(merged)
+        )
+
+    # --------------------------------------------------
+    # ADDITIONAL CLASSIFICATION OUTPUTS
+    # --------------------------------------------------
 
     if classification_targets is not None:
 
-        for target in classification_targets:
+        for i, target in enumerate(classification_targets):
 
             target = np.array(target)
 
@@ -164,14 +186,18 @@ def build_multimodal_model(
             test_targets.append(target[split_idx:])
 
             outputs.append(
-                ak.ClassificationHead()(merged)
+                ak.ClassificationHead(
+                    name=f"classification_{i}"
+                )(merged)
             )
 
-    # Regression outputs
+    # --------------------------------------------------
+    # REGRESSION OUTPUTS
+    # --------------------------------------------------
 
     if regression_targets is not None:
 
-        for target in regression_targets:
+        for i, target in enumerate(regression_targets):
 
             target = np.array(target)
 
@@ -179,7 +205,9 @@ def build_multimodal_model(
             test_targets.append(target[split_idx:])
 
             outputs.append(
-                ak.RegressionHead()(merged)
+                ak.RegressionHead(
+                    name=f"regression_{i}"
+                )(merged)
             )
 
     if len(outputs) == 0:
@@ -247,6 +275,7 @@ if __name__ == "__main__":
     docs = np.array(news.data)[:num_instances]
     labels = np.array(news.target)[:num_instances]
 
+    # Image data
     image_data = np.random.rand(
         num_instances,
         32,
@@ -254,16 +283,19 @@ if __name__ == "__main__":
         3,
     ).astype(np.float32)
 
+    # Structured data
     structured_data = np.random.rand(
         num_instances,
         10,
     ).astype(np.float32)
 
+    # Additional classification target
     classification_target = np.random.randint(
         5,
         size=num_instances,
     )
 
+    # Regression target
     regression_target = np.random.rand(
         num_instances,
         1,
@@ -272,21 +304,22 @@ if __name__ == "__main__":
     best_model, results = build_multimodal_model(
         text_data={
             "doc": docs,
-            "label": labels,  # optional metadata only
+            "label": labels,  # automatically becomes a ClassificationHead
         },
         image_data=image_data,
         structured_data=structured_data,
         classification_targets=[
-            labels,
             classification_target,
         ],
         regression_targets=[
             regression_target,
         ],
+        include_text_labels=True,
         split_ratio=0.8,
         max_trials=3,
         seed=42,
         epochs=1,
     )
+
     pprint(best_model)
     pprint(results)
