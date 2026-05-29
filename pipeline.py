@@ -44,18 +44,24 @@ def build_multimodal_model(
     # --------------------------------------------------
     # Determine dataset size
     # --------------------------------------------------
-
+    collection_of_nums = []
     if text_data is not None:
         num_instances = len(text_data["doc"])
-    elif image_data is not None:
+        collection_of_nums += [num_instances]
+    if image_data is not None:
         num_instances = len(image_data)
-    elif structured_data is not None:
+        collection_of_nums += [num_instances]
+    if structured_data is not None:
         num_instances = len(structured_data)
-    else:
+        collection_of_nums += [num_instances]
+    if len(collection_of_nums)==0:
         raise ValueError(
             "At least one of text_data, image_data, structured_data is required."
         )
-
+    if len(set(list(collection_of_nums)))!=1:
+        raise ValueError(
+            "At least one of text_data, image_data, structured_data has different number of samples."
+        )
     split_idx = int(num_instances * split_ratio)
 
     # --------------------------------------------------
@@ -314,7 +320,7 @@ if __name__ == "__main__":
         regression_targets=[
             regression_target,
         ],
-        include_text_labels=True,
+        include_text_labels=False,
         split_ratio=0.8,
         max_trials=3,
         seed=42,
